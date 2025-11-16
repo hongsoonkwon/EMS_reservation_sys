@@ -1,168 +1,175 @@
 // app/(tabs)/index.tsx
-import { useState } from "react";
+
+import { useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  Button,
   StyleSheet,
-  ScrollView,
+  Text,
+  View,
+  Pressable,
+  SafeAreaView,
 } from "react-native";
 import { useReservations } from "../../context/ReservationsContext";
-import { Reservation } from "../../types/reservation";
+import { ReservationFormModal } from "../../components/ReservationFormModal";
+import { ReservationByDateModal } from "../../components/ReservationByDateModal";
+import { useAuth } from "../../context/AuthContext";
 
 function formatDate(date: Date) {
-  return date.toISOString().slice(0, 10); // YYYY-MM-DD
+  return date.toISOString().slice(0, 10);
 }
-
 
 export default function HomeScreen() {
-  const { reservations, addReservation } = useReservations();
+  const { reservations } = useReservations();
 
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [date, setDate] = useState(formatDate(new Date())); // 출발 날짜
+  const { admin } = useAuth();
 
-  const todayStr = formatDate(new Date());
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
-  const todaysReservations = reservations.filter(
-    (r) => r.date === todayStr
-  );
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
-  const handleSubmit = async () => {
-    if (!name || !phone || !from || !to || !date) {
-      alert("모든 필드를 입력해 주세요.");
-      return;
-    }
-    await addReservation({
-      name,
-      phone,
-      from,
-      to,
-      date,
-      notes: "",
-    });
-    // 입력값 초기화
-    resetForm();
-    // 이름/전화번호는 한 명의 user라면 유지해도 되고, 여기선 유지
-    alert("예약이 등록되었습니다.");
-  };
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
-  const resetForm = () => {
-    setName("");
-    setPhone("");
-    setFrom("");
-    setTo("");
-    setDate(formatDate(new Date())); // 오늘 날짜로 초기화
-  };
+  const todayStr = formatDate(today);
+
+  /** 🔥 오늘 예약 목록 + 시간 ASC 정렬 */
+  const todaysReservations = reservations
+    .filter((r) => r.date === todayStr)
+    .sort((a, b) => (a.time > b.time ? 1 : -1));
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>구급차 예약 등록</Text>
+    <>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.container}>
 
-      <Text style={styles.label}>예약자 이름</Text>
-      <TextInput
-        style={styles.input}
-        value={name}
-        onChangeText={setName}
-        placeholder="이름"
+          {/* 예약하기 카드 */}
+          {(admin?.role === "master" || admin?.role === "admin") && (
+            <Pressable
+              onPress={() => setIsFormOpen(true)}
+              style={({ pressed }) => [
+                styles.bookingCard,
+                pressed && { opacity: 0.9 },
+              ]}
+            >
+              <Text style={styles.bookingTitle}>예약하기</Text>
+              <Text style={styles.bookingSubtitle}>
+                구급차 예약을 새로 등록하려면 눌러주세요.
+              </Text>
+            </Pressable>
+          )}
+
+          {/* 오늘 예약 박스 */}
+          <Pressable
+            onPress={() => {
+              setSelectedDate(todayStr);
+              setModalVisible(true);
+            }}
+            style={({ pressed }) => [
+              styles.todayBox,
+              pressed && { opacity: 0.95 },
+            ]}
+          >
+            <Text style={styles.todayTitle}>오늘({todayStr}) 예약 목록</Text>
+
+            {todaysReservations.length === 0 ? (
+              <Text style={styles.emptyText}>오늘 예약된 항목이 없습니다.</Text>
+            ) : (
+              todaysReservations.slice(0, 3).map((r) => (
+                <View key={r.id} style={{ marginTop: 8 }}>
+                  <Text style={{ fontWeight: "600" }}>
+                    {r.time} — {r.name}
+                  </Text>
+                  <Text style={{ color: "#555" }}>
+                    {r.from} → {r.to}
+                  </Text>
+                </View>
+              ))
+            )}
+
+            {todaysReservations.length > 0 && (
+              <Text style={styles.moreText}>전체 목록 보기 →</Text>
+            )}
+          </Pressable>
+
+        </View>
+      </SafeAreaView>
+
+      {/* 예약하기 모달 */}
+      <ReservationFormModal
+        visible={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
       />
 
-      <Text style={styles.label}>전화번호</Text>
-      <TextInput
-        style={styles.input}
-        value={phone}
-        onChangeText={setPhone}
-        placeholder="010-0000-0000"
-        keyboardType="phone-pad"
+      {/* 날짜 기반 예약 모달 */}
+      <ReservationByDateModal
+        visible={modalVisible}
+        date={selectedDate}
+        reservations={reservations}
+        onClose={() => setModalVisible(false)}
       />
-
-      <Text style={styles.label}>출발지</Text>
-      <TextInput
-        style={styles.input}
-        value={from}
-        onChangeText={setFrom}
-        placeholder="출발지"
-      />
-
-      <Text style={styles.label}>도착지</Text>
-      <TextInput
-        style={styles.input}
-        value={to}
-        onChangeText={setTo}
-        placeholder="도착지"
-      />
-
-      <Text style={styles.label}>출발 날짜 (YYYY-MM-DD)</Text>
-      <TextInput
-        style={styles.input}
-        value={date}
-        onChangeText={setDate}
-        placeholder="예: 2025-01-01"
-      />
-
-      <View style={styles.buttonWrapper}>
-        <Button title="예약 등록" onPress={handleSubmit} />
-      </View>
-
-      <Text style={[styles.title, { marginTop: 24 }]}>
-        오늘({todayStr}) 예약 목록
-      </Text>
-
-      {todaysReservations.length === 0 ? (
-        <Text>오늘 예약된 항목이 없습니다.</Text>
-      ) : (
-        todaysReservations.map((r: Reservation) => (
-          <View key={r.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{r.name}</Text>
-            <Text>{r.phone}</Text>
-            <Text>예약 날짜: {r.date}</Text>
-            <Text>출발지: {r.from}</Text>
-            <Text>도착지: {r.to}</Text>
-          </View>
-        ))
-      )}
-    </ScrollView>
+    </>
   );
 }
 
-
-
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
+  safe: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
   },
-  title: {
+  container: {
+    paddingTop: 70,
+    padding: 16,
+    paddingBottom: 32,
+    backgroundColor: "#f2f2f2",
+    flex: 1,
+  },
+  bookingCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  bookingTitle: {
     fontSize: 22,
     fontWeight: "bold",
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  label: {
-    marginTop: 8,
-    marginBottom: 4,
-    fontWeight: "600",
+  bookingSubtitle: {
+    fontSize: 14,
+    color: "#555",
   },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
+  todayBox: {
+    marginTop: 24,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
   },
-  buttonWrapper: {
-    marginTop: 16,
-  },
-  card: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ddd",
-  },
-  cardTitle: {
+  todayTitle: {
+    fontSize: 18,
     fontWeight: "bold",
-    marginBottom: 4,
+    marginBottom: 8,
+  },
+  emptyText: {
+    marginTop: 4,
+    color: "#666",
+  },
+  moreText: {
+    marginTop: 10,
+    textAlign: "right",
+    color: "#007AFF",
+    fontWeight: "600",
   },
 });

@@ -1,143 +1,91 @@
-// app/(tabs)/search.tsx
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
   ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+  Keyboard,
   Pressable,
-  Button,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useReservations } from "../../context/ReservationsContext";
-import { Reservation } from "../../types/reservation";
-
-function isFutureOrToday(dateStr: string) {
-  const today = new Date();
-  const d = new Date(dateStr);
-  // 날짜 비교 위해 시/분/초 초기화 (조금 러프해도 괜찮음)
-  const todayDay = new Date(today.toISOString().slice(0, 10));
-  const targetDay = new Date(dateStr);
-  return targetDay >= todayDay;
-}
+import { CalendarView } from "../../components/CalendarView";
+import { ReservationByDateModal } from "../../components/ReservationByDateModal";
+import { useReservationModal } from "../../context/ReservationModalContext";
 
 export default function SearchScreen() {
-  const { reservations, deleteReservation } = useReservations();
+  const { reservations } = useReservations();
   const [keyword, setKeyword] = useState("");
-  const router = useRouter();
 
-  const filtered = useMemo(() => {
-    if (!keyword.trim()) return reservations;
-    const key = keyword.trim();
-    return reservations.filter(
-      (r) => r.name.includes(key) || r.phone.includes(key)
-    );
-  }, [keyword, reservations]);
-
-  const upcoming = filtered.filter((r) => isFutureOrToday(r.date));
-  const past = filtered.filter((r) => !isFutureOrToday(r.date));
-
-  const handleDelete = async (r: Reservation) => {
-    if (!isFutureOrToday(r.date)) {
-      alert("지난 예약은 삭제할 수 없습니다.");
-      return;
-    }
-    await deleteReservation(r.id);
-  };
-
-  const renderCard = (r: Reservation) => (
-    <View key={r.id} style={styles.card}>
-      <Pressable
-        style={{ flex: 1 }}
-        onPress={() =>
-          router.push({
-            pathname: "/reservation/[id]",
-            params: { id: r.id },
-          })
-        }
-      >
-        <Text style={styles.cardTitle}>{r.name}</Text>
-        <Text>{r.phone}</Text>
-        <Text>예약 날짜: {r.date}</Text>
-        <Text>출발지: {r.from}</Text>
-      </Pressable>
-      {isFutureOrToday(r.date) && (
-        <View style={styles.deleteButtonWrapper}>
-          <Button title="삭제" onPress={() => handleDelete(r)} />
-        </View>
-      )}
-    </View>
-  );
+  // 🔥 전역 Modal 상태
+  const { visible, date, open, close } = useReservationModal();
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>예약 검색</Text>
+    <>
+      {/* 키보드 닫기 위해 Pressable 감싸기 */}
+      <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss}>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
 
-      <TextInput
-        style={styles.input}
-        value={keyword}
-        onChangeText={setKeyword}
-        placeholder="이름 또는 전화번호로 검색"
+          {/* 🔍 검색 바 */}
+          <View style={styles.searchBar}>
+            <Ionicons
+              name="search"
+              size={20}
+              color="#777"
+              style={{ marginRight: 8 }}
+            />
+            <TextInput
+              style={styles.searchInput}
+              value={keyword}
+              onChangeText={setKeyword}
+              placeholder="이름 또는 전화번호로 검색"
+              returnKeyType="search"
+            />
+          </View>
+
+          {/* 📅 캘린더 */}
+          <CalendarView
+            reservations={reservations}
+            keyword={keyword}
+            onSelectDate={(dateString) => {
+              open(dateString); // 🔥 글로벌 모달 오픈
+            }}
+          />
+        </ScrollView>
+      </Pressable>
+
+      {/* 날짜별 예약 모달 */}
+      <ReservationByDateModal
+        visible={visible}
+        date={date}
+        reservations={reservations}
+        onClose={close}
       />
-
-      <Text style={styles.sectionTitle}>다가올 예약</Text>
-      {upcoming.length === 0 ? (
-        <Text style={styles.emptyText}>다가올 예약이 없습니다.</Text>
-      ) : (
-        upcoming.map(renderCard)
-      )}
-
-      <Text style={styles.sectionTitle}>지난 예약</Text>
-      {past.length === 0 ? (
-        <Text style={styles.emptyText}>지난 예약이 없습니다.</Text>
-      ) : (
-        past.map(renderCard)
-      )}
-    </ScrollView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    paddingTop: 70,
     padding: 16,
+    backgroundColor: "#f2f2f2",
+    flexGrow: 1,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginBottom: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    marginTop: 12,
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  emptyText: {
-    marginTop: 4,
-    color: "#666",
-  },
-  card: {
-    marginTop: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
+  searchBar: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    paddingHorizontal: 14,
+    paddingVertical: 10,  // 🔥 높이를 조금 키워서 자연스럽게
+    marginBottom: 16,
   },
-  cardTitle: {
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  deleteButtonWrapper: {
-    marginLeft: 8,
+  searchInput: {
+    flex: 1,
+    paddingVertical: 2,   // 🔥 너무 작지도 크지도 않게 최적값
+    fontSize: 15,
   },
 });

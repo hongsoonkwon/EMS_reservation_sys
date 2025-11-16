@@ -1,77 +1,152 @@
 // context/ReservationsContext.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Reservation } from "../types/reservation";
+import { useAuth } from "./AuthContext";
 
-const STORAGE_KEY = "reservations";
+const API_BASE_URL = "http://172.18.41.167:4000";
 
 interface ReservationsContextValue {
   reservations: Reservation[];
-  addReservation: (data: Omit<Reservation, "id" | "createdAt">) => Promise<void>;
+  addReservation: (data: {
+    name: string;
+    phone: string;
+    from: string;
+    to: string;
+    date: string;
+    time: string;
+    notes?: string;
+  }) => Promise<void>;
+
   updateReservation: (reservation: Reservation) => Promise<void>;
   deleteReservation: (id: string) => Promise<void>;
+  reloadReservations: () => Promise<void>;
 }
 
 const ReservationsContext = createContext<ReservationsContextValue | null>(null);
 
 export function ReservationsProvider({ children }: { children: React.ReactNode }) {
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const { getAuthHeader, admin } = useAuth();
 
-  // JSON에서 로드
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed: Reservation[] = JSON.parse(raw);
-          setReservations(parsed);
-        }
-      } catch (e) {
-        console.warn("Failed to load reservations", e);
-      }
-    })();
-  }, []);
+  // ------------------------------------------------
+  // 예약 목록 다시 불러오기 (중앙 함수)
+  // ------------------------------------------------
+  const reloadReservations = async () => {
+    if (!admin) return;
 
-  // JSON으로 저장
-  const persist = async (items: Reservation[]) => {
-    setReservations(items);
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items, null, 2));
+      const res = await fetch(`${API_BASE_URL}/reservations`, {
+        headers: {
+          ...getAuthHeader(),
+        },
+      });
+
+      if (!res.ok) return;
+
+      const json = await res.json();
+      setReservations(json.reservations ?? []);
     } catch (e) {
-      console.warn("Failed to save reservations", e);
+      console.warn("Failed to reload reservations", e);
     }
   };
 
-  const addReservation: ReservationsContextValue["addReservation"] = async (
-    data
-  ) => {
-    const now = new Date();
-    const newItem: Reservation = {
-      ...data,
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      createdAt: now.toISOString(),
-    };
-    const next = [...reservations, newItem];
-    await persist(next);
+  // ------------------------------------------------
+  // 로그인 시 자동 로드
+  // ------------------------------------------------
+  useEffect(() => {
+    reloadReservations();
+  }, [admin]);
+
+  // ------------------------------------------------
+  // 예약 추가
+  // ------------------------------------------------
+  const addReservation = async (data: {
+    name: string;
+    phone: string;
+    from: string;
+    to: string;
+    date: string;
+    time: string;
+    notes?: string;
+  }) => {
+    if (!admin || admin.role === "user") {
+      alert("예약 생성 권한이 없습니다.");
+      return;
+    }
+
+    try {
+      await fetch(`${API_BASE_URL}/reservations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+        body: JSON.stringify(data),
+      });
+
+      await reloadReservations(); // 🔥 중요
+    } catch (e) {
+      console.warn("Failed to add reservation", e);
+    }
   };
 
-  const updateReservation: ReservationsContextValue["updateReservation"] =
-    async (reservation) => {
-      const next = reservations.map((r) =>
-        r.id === reservation.id ? reservation : r
-      );
-      await persist(next);
-    };
+  // ------------------------------------------------
+  // 예약 수정
+  // ------------------------------------------------
+  const updateReservation = async (reservation: Reservation) => {
+    if (!admin || admin.role === "user") {
+      alert("예약 수정 권한이 없습니다.");
+      return;
+    }
 
-  const deleteReservation: ReservationsContextValue["deleteReservation"] =
-    async (id) => {
-      const next = reservations.filter((r) => r.id !== id);
-      await persist(next);
-    };
+    try {
+      await fetch(`${API_BASE_URL}/reservations/${reservation.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+        body: JSON.stringify(reservation),
+      });
+
+      await reloadReservations(); // 🔥 중요
+    } catch (e) {
+      console.warn("Failed to update reservation", e);
+    }
+  };
+
+  // ------------------------------------------------
+  // 예약 삭제
+  // ------------------------------------------------
+  const deleteReservation = async (id: string) => {
+    if (!admin || admin.role === "user") {
+      alert("예약 삭제 권한이 없습니다.");
+      return;
+    }
+
+    try {
+      await fetch(`${API_BASE_URL}/reservations/${id}`, {
+        method: "DELETE",
+        headers: {
+          ...getAuthHeader(),
+        },
+      });
+
+      await reloadReservations(); // 🔥 중요
+    } catch (e) {
+      console.warn("Failed to delete reservation", e);
+    }
+  };
 
   return (
     <ReservationsContext.Provider
-      value={{ reservations, addReservation, updateReservation, deleteReservation }}
+      value={{
+        reservations,
+        addReservation,
+        updateReservation,
+        deleteReservation,
+        reloadReservations,
+      }}
     >
       {children}
     </ReservationsContext.Provider>
