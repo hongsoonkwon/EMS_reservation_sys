@@ -2,6 +2,7 @@ node_modules/
 ems.db
 .env
 .env.*
+*.db
 
 # Logs
 npm-debug.log*
